@@ -19,18 +19,19 @@ type Node struct {
 type Router struct {
 	name      string
 	id        int
-	neighbors map[string]RouterPath
-	updated   bool
+	neighbors map[string]int
+	nexthop   map[int]int
+}
+
+type RoutingPath struct {
+	routerA Router
+	routerB Router
+	cost    int
 }
 
 type Path struct {
 	node *Node
 	cost int
-}
-
-type RouterPath struct {
-	router *Router
-	cost   int
 }
 
 type Item struct {
@@ -57,36 +58,6 @@ func (pq *PriorityQueue) Update(item *Item, value Node, priority int) {
 	item.value = value
 	item.priority = priority
 	heap.Fix(pq, item.index)
-}
-
-func (router *Router) updateDistanceVector(neighbor *Router, neighborDistances map[string]RouterPath) bool {
-	updated := false
-	for neighborname, edgeneighbor := range neighborDistances {
-		neighborCost, ok := router.neighbors[neighbor.name]
-		if !ok {
-			router.neighbors[neighbor.name] = RouterPath{router: neighbor, cost: int(^uint(0) >> 1)}
-			neighborCost = router.neighbors[neighbor.name]
-		}
-		newDist := neighborCost.cost + edgeneighbor.cost
-		othernewdist, ok := router.neighbors[neighborname]
-		if !ok {
-			router.neighbors[neighborname] = RouterPath{router: edgeneighbor.router, cost: int(^uint(0) >> 1)}
-			othernewdist = router.neighbors[neighborname]
-		}
-		if newDist < othernewdist.cost {
-			othernewdist.cost = newDist
-			updated = true
-		}
-	}
-	return updated
-}
-
-func (router *Router) getRouterPathString() string {
-	var res strings.Builder
-	for _, neighborpath := range router.neighbors {
-		res.WriteString(strconv.Itoa(neighborpath.cost) + " ")
-	}
-	return res.String()
 }
 
 type DjikstraResult struct {
@@ -126,50 +97,14 @@ func Dijkstra(source *Node, graph []*Node) DjikstraResult {
 	return DjikstraResult{costs: costs, paths: paths}
 }
 
-func BellmanFord(source int, graph []*Router, timestep int, maxIterations int) bool {
-	iteration := timestep
-	converged := false
-	convergencecount := 0
-
-	nextHop := make([]int, len(graph))
-	for i := 0; i < len(nextHop); i++ {
-		if i == source {
-			nextHop[i] = source
-		} else {
-			nextHop[i] = -1
-		}
-	}
-
-	for iteration < maxIterations && convergencecount < 5 {
-		converged = true
-		for j := 0; j < len(graph); j++ {
-			for k := 0; k < len(graph[j].neighbors); k++ {
-				neighborRouter, ok := graph[j].neighbors[graph[k].name]
-				if !ok {
-					graph[j].neighbors[graph[k].name] = RouterPath{router: graph[k], cost: int(^uint(0) >> 1)}
-					neighborRouter = graph[j].neighbors[graph[k].name]
-				}
-				updated := graph[j].updateDistanceVector(neighborRouter.router, neighborRouter.router.neighbors)
-				if updated {
-					nextHop[j] = neighborRouter.router.id
-					converged = false
-				}
-			}
-		}
-		if converged {
-			convergencecount += 1
-		}
-
-		for j := 0; j < len(graph); j++ {
-			// fmt.Println("Router: " + graph[j].name + " Distance Vector: " + graph[j].getRouterPathString())
-			WriteStateBellman(graph, *graph[j], iteration, nextHop)
-		}
-		iteration++
-	}
-	return convergencecount >= 5
+type BellmanOutput struct {
+	nexthop              string
+	distancevectorstring string
+	cost                 string
+	destination          string
 }
 
-func WriteStateBellman(routerGraph []*Router, source Router, timestep int, nexthop []int) {
+func WriteStateBellman(currentDistanceVector [][]int, source Router, timestep int, routerGraph []*Router) {
 	path := "topology_DV_" + source.name + ".txt"
 	var file *os.File
 
@@ -186,67 +121,83 @@ func WriteStateBellman(routerGraph []*Router, source Router, timestep int, nexth
 			return
 		}
 	}
-
-	outputSlice := []struct {
-		destination         string
-		nexthop             string
-		cost                string
-		distancevectorslice map[string]RouterPath
-	}{}
-
-	for i := 0; i < len(routerGraph); i++ {
-		var sum string
-
-		if source.neighbors[routerGraph[i].name].cost == int(^uint(0)>>1) {
-			sum = "N"
+	outputSlice := []BellmanOutput{}
+	for i := 0; i < len(currentDistanceVector); i++ {
+		var distancevectorstring string
+		// If there is a link add that nodes distance vector
+		_, ok := source.neighbors[routerGraph[i].name]
+		if source.id == i {
+			// distancevectorstring = getOtherDistanceVectorString(source, len(routerGraph), routerGraph)
+			distancevectorstring = getDistanceVectorString(currentDistanceVector[i])
+		} else if ok && timestep != 0 {
+			distancevectorstring = getDistanceVectorString(currentDistanceVector[i])
 		} else {
-			sum = strconv.Itoa(source.neighbors[routerGraph[i].name].cost)
+			distancevectorstring = getBlankDistanceVectorString(len(currentDistanceVector))
 		}
-		outputSlice = append(outputSlice, struct {
-			destination         string
-			nexthop             string
-			cost                string
-			distancevectorslice map[string]RouterPath
-		}{
-			destination:         routerGraph[i].name,
-			nexthop:             routerGraph[nexthop[routerGraph[i].id]].name,
-			cost:                sum,
-			distancevectorslice: source.neighbors,
-		})
+		var nexthop string
+		nexthopcheck, ok := source.nexthop[i]
+		if !ok {
+			nexthop = "N"
+		} else {
+			nexthop = routerGraph[nexthopcheck].name
+		}
+		tempcost := currentDistanceVector[source.id][i]
+		var cost string
+		if tempcost == int(^uint(0)>>1) {
+			cost = "N"
+		} else {
+			cost = strconv.Itoa(tempcost)
+		}
+		outputSlice = append(outputSlice, BellmanOutput{distancevectorstring: distancevectorstring, cost: cost, nexthop: nexthop, destination: routerGraph[i].name})
 	}
 	sort.Slice(outputSlice, func(i, j int) bool {
 		return outputSlice[i].destination < outputSlice[j].destination
 	})
 	for i := 0; i < len(outputSlice); i++ {
-		file.WriteString(fmt.Sprintf("%d	%s	%s	%s %s \n", timestep, outputSlice[i].destination, outputSlice[i].nexthop, outputSlice[i].cost, getDistanceVectorString(outputSlice[i].distancevectorslice)))
+		file.WriteString(fmt.Sprintf("%d   %s   %s   %s   |   %s\n", timestep, outputSlice[i].destination, outputSlice[i].nexthop, outputSlice[i].cost, outputSlice[i].distancevectorstring))
 	}
+	file.WriteString("\n")
 }
 
-type distancevectoroutput struct {
-	name string
-	cost string
-}
-
-func getDistanceVectorString(distancevectormap map[string]RouterPath) string {
-	distancevectorslice := make([]distancevectoroutput, len(distancevectormap))
-	for name, path := range distancevectormap {
-		var newpath string
-		if path.cost == int(^uint(0)>>1) {
-			newpath = "N"
-		} else {
-			newpath = strconv.Itoa(path.cost)
-		}
-		distancevectorslice = append(distancevectorslice, distancevectoroutput{name: name, cost: newpath})
-	}
-	sort.Slice(distancevectorslice, func(i, j int) bool {
-		return distancevectorslice[i].name < distancevectorslice[j].name
-	})
+func getDistanceVectorString(distancevector []int) string {
 	var res strings.Builder
-	for i := 0; i < len(distancevectorslice); i++ {
+	for i := 0; i < len(distancevector); i++ {
 		if i > 0 {
-			res.WriteString("    ")
+			res.WriteString("   ")
 		}
-		res.WriteString(distancevectorslice[i].cost)
+		cost := distancevector[i]
+		if cost == int(^uint(0)>>1) {
+			res.WriteString("N")
+		} else {
+			res.WriteString(strconv.Itoa(distancevector[i]))
+		}
+	}
+	return res.String()
+}
+
+func getOtherDistanceVectorString(source Router, lengthofrouter int, routerGraph []*Router) string {
+	var res strings.Builder
+	for i := range lengthofrouter {
+		if i > 0 {
+			res.WriteString("   ")
+		}
+		val, ok := source.neighbors[routerGraph[i].name]
+		if !ok {
+			res.WriteString("N")
+		} else {
+			res.WriteString(strconv.Itoa(val))
+		}
+	}
+	return res.String()
+}
+
+func getBlankDistanceVectorString(routerGraphLength int) string {
+	var res strings.Builder
+	for i := 0; i < routerGraphLength; i++ {
+		if i > 0 {
+			res.WriteString("   ")
+		}
+		res.WriteString("N")
 	}
 	return res.String()
 }
@@ -307,16 +258,125 @@ func WriteStateDjikstra(graph []*Node, costs []int, paths []int, time int, sourc
 	file.Close()
 }
 
+// Construct routing table [x][y][z] = cost at x,y,z
+// Where x = timestep
+// Where y = distance vector at x,y
+// Where z = destination
+func ConstructRoutingTable(lengthOfGraph int) [][][]int {
+	result := make([][][]int, 100)
+
+	for i := range result {
+		result[i] = make([][]int, lengthOfGraph)
+		for j := range result[i] {
+			result[i][j] = make([]int, lengthOfGraph)
+			for k := range result[i][j] {
+				result[i][j][k] = int(^uint(0) >> 1)
+			}
+		}
+	}
+	return result
+}
+
+// Initially each router should only know of a path to itself at cost 0
+func InitializeRoutingTable(routingGraph []*Router) [][][]int {
+	routingTable := ConstructRoutingTable(len(routingGraph))
+	for _, router := range routingGraph {
+		routingTable[0][router.id][router.id] = 0
+	}
+	return routingTable
+}
+
+func GetGlobalDistanceVector(routingTable [][][]int, timestep int) [][]int {
+	newDistanceVector := make([][]int, len(routingTable[timestep]))
+
+	for i := range routingTable[timestep] {
+		newDistanceVector[i] = make([]int, len(routingTable[timestep][i]))
+		copy(newDistanceVector[i], routingTable[timestep][i])
+	}
+
+	return newDistanceVector
+}
+
+// Gets the current distance vector by copying over the distance vector from previous timestep
+func GetLocalDistanceVector(source Router, routingTable [][][]int, timestep int, routergraph []*Router) [][]int {
+	var prevtimestep int
+	result := [][]int{}
+	if timestep > 0 {
+		prevtimestep = timestep - 1
+	} else {
+		prevtimestep = timestep
+	}
+	for i := 0; i < len(routingTable[timestep]); i++ {
+		if source.id == i {
+			result = append(result, routingTable[timestep][i])
+		} else {
+			// If the source has a INITIAL path to the neighbor add the costs to the result
+			// Otherwise add a list of max int
+			_, ok := source.neighbors[routergraph[i].name]
+			if !ok {
+				tempresult := make([]int, len(routingTable[prevtimestep][0]))
+				for j := 0; j < len(routingTable[prevtimestep][0]); j++ {
+					tempresult[j] = int(^uint(0) >> 1)
+				}
+				result = append(result, tempresult)
+			} else {
+				result = append(result, routingTable[prevtimestep][i])
+			}
+		}
+	}
+	return result
+}
+
+// To add new Paths at timestep i
+// If routingtable[i - 1][source][destination] > newpath(source, desination, cost)
+// Add path to timestep i
+// Else stay with old path
+// Write updated path at timestep i
+func updateDistanceVector(source Router, routingTable [][][]int, timestep, destinationID, newCost int) [][]int {
+	currentDistanceVector := routingTable[timestep]
+	currentCost := currentDistanceVector[source.id][destinationID]
+
+	if newCost < currentCost {
+		currentDistanceVector[source.id][destinationID] = newCost
+		source.nexthop[destinationID] = destinationID
+	}
+
+	return currentDistanceVector
+}
+
+func BellmanFord(source Router, routingTable [][][]int, timestep int, pathList []*RoutingPath) (bool, [][][]int) {
+	// For each edge
+	// where u = startingedge
+	// where v = destinationedge
+	// See if distance from source to u + distance from u to v is less than distance of source to v
+	// If it is update routingtable[timestep][source][v] to be source to u + distrance from u to v
+	// set next hop to v to be u
+	converged := true
+	for _, path := range pathList {
+		u := path.routerA
+		v := path.routerB
+		tempdistance := routingTable[timestep][source.id][u.id] + routingTable[timestep][u.id][v.id]
+		if tempdistance > 0 && tempdistance < routingTable[timestep][source.id][v.id] {
+			routingTable[timestep+2][source.id][v.id] = tempdistance
+			source.nexthop[v.id] = u.id
+			converged = false
+		}
+	}
+	return converged, routingTable
+}
+
 func ConstructGraph(lines []string) ([]*Node, map[string]*Node) {
 	nodeMap := make(map[string]*Node)
 	routerMap := make(map[string]*Router)
 	edgePattern := regexp.MustCompile(`(\d+):([A-Za-z]),([A-Za-z]),(\d+)`)
-
 	var currentTime int
 	graph := []*Node{}
 	routerGraph := []*Router{}
+	pathList := []*RoutingPath{}
+	currentRouteIndex := 0
+	var routingTable [][][]int
 
-	for _, line := range lines {
+	for i, line := range lines {
 		if line == "" {
 			continue
 		}
@@ -329,12 +389,63 @@ func ConstructGraph(lines []string) ([]*Node, map[string]*Node) {
 		nodeAName, nodeBName, costStr := matches[2], matches[3], matches[4]
 		cost, _ := strconv.Atoi(costStr)
 
-		if time != currentTime {
+		// If the time is updated run simulation up to that point
+		// OR if all lines have been read run simulation
+		if time != currentTime || i == len(lines)-1 {
+			// Write truth table at time
 			for i := 0; i < len(graph); i++ {
 				source := graph[i]
 				results := Dijkstra(source, graph)
 				WriteStateDjikstra(graph, results.costs, results.paths, currentTime, *source)
-				BellmanFord(source.id, routerGraph, currentTime, time)
+			}
+			if routingTable == nil {
+				// If routing table has not been initialized
+				// Initialize it
+				routingTable = InitializeRoutingTable(routerGraph)
+				currentTime += 1
+				for i := 0; i < len(routerGraph); i++ {
+					WriteStateBellman(GetLocalDistanceVector(*routerGraph[i], routingTable, currentTime-1, *&routerGraph), *routerGraph[i], currentTime-1, routerGraph)
+				}
+			}
+			// newPath := false
+			// before adding new paths copy over previous pathse
+			if currentRouteIndex < len(pathList) {
+				routingTable[currentTime] = GetGlobalDistanceVector(routingTable, currentTime-1)
+				routingTable[currentTime+1] = GetGlobalDistanceVector(routingTable, currentTime)
+				// newPath = true
+			}
+			for i := currentRouteIndex; i < len(pathList); i++ {
+				// Add all the paths to the routing table
+				path := pathList[i]
+				updateDistanceVector(path.routerA, routingTable, currentTime+1, path.routerB.id, path.cost)
+			}
+			currentTime += 1
+			currentRouteIndex = len(pathList)
+			simulation := true
+			convergencecount := 0
+			for simulation {
+				if convergencecount == 5 || currentTime >= 100 || currentTime == time {
+					break
+				}
+				for i := range len(routerGraph) {
+					WriteStateBellman(GetLocalDistanceVector(*routerGraph[i], routingTable, currentTime-1, *&routerGraph), *routerGraph[i], currentTime-1, routerGraph)
+				}
+				var convergence bool
+				var newRoutingTable [][][]int
+				if currentTime != 99 && currentTime%2 == 0 {
+					routingTable[currentTime+1] = GetGlobalDistanceVector(routingTable, currentTime)
+					if currentTime < 97 {
+						routingTable[currentTime+2] = GetGlobalDistanceVector(routingTable, currentTime+1)
+					}
+				}
+				for i := 0; i < len(routerGraph) && currentTime < 97; i++ {
+					convergence, newRoutingTable = BellmanFord(*routerGraph[i], routingTable, currentTime, pathList)
+					if convergence {
+						convergencecount += 1
+					}
+					routingTable = newRoutingTable
+				}
+				currentTime += 1
 			}
 			currentTime = time
 		}
@@ -343,8 +454,8 @@ func ConstructGraph(lines []string) ([]*Node, map[string]*Node) {
 		routerA := routerMap[nodeAName]
 		if !existsA {
 			nodeA = &Node{id: len(nodeMap), name: nodeAName}
-			routerA = &Router{id: len(nodeMap), name: nodeAName, neighbors: make(map[string]RouterPath)}
-			routerA.neighbors[routerA.name] = RouterPath{router: routerA, cost: 0}
+			routerA = &Router{id: len(nodeMap), name: nodeAName, neighbors: make(map[string]int), nexthop: make(map[int]int)}
+			routerA.nexthop[routerA.id] = routerA.id
 			nodeMap[nodeAName] = nodeA
 			routerMap[nodeAName] = routerA
 			graph = append(graph, nodeA)
@@ -355,8 +466,8 @@ func ConstructGraph(lines []string) ([]*Node, map[string]*Node) {
 		routerB := routerMap[nodeBName]
 		if !existsB {
 			nodeB = &Node{id: len(nodeMap), name: nodeBName}
-			routerB = &Router{id: len(nodeMap), name: nodeBName, neighbors: make(map[string]RouterPath)}
-			routerB.neighbors[routerB.name] = RouterPath{router: routerB, cost: 0}
+			routerB = &Router{id: len(nodeMap), name: nodeBName, neighbors: make(map[string]int), nexthop: make(map[int]int)}
+			routerB.nexthop[routerB.id] = routerB.id
 			nodeMap[nodeBName] = nodeB
 			routerMap[nodeBName] = routerB
 			graph = append(graph, nodeB)
@@ -365,12 +476,11 @@ func ConstructGraph(lines []string) ([]*Node, map[string]*Node) {
 
 		nodeA.neighbors = append(nodeA.neighbors, Path{node: nodeB, cost: cost})
 		nodeB.neighbors = append(nodeB.neighbors, Path{node: nodeA, cost: cost})
-		routerA.neighbors[nodeBName] = RouterPath{router: routerB, cost: cost}
-		routerB.neighbors[nodeAName] = RouterPath{router: routerA, cost: cost}
-		// routerA.neighbors = append(routerA.neighbors, RouterPath{router: routerB, cost: cost})
-		// routerB.neighbors = append(routerB.neighbors, RouterPath{router: routerB, cost: cost})
+		routerA.neighbors[routerB.name] = cost
+		routerB.neighbors[routerA.name] = cost
+		pathList = append(pathList, &RoutingPath{routerA: *routerA, routerB: *routerB, cost: cost})
+		pathList = append(pathList, &RoutingPath{routerA: *routerB, routerB: *routerA, cost: cost})
 	}
-
 	for i := 0; i < len(graph); i++ {
 		source := graph[i]
 		results := Dijkstra(source, graph)
@@ -386,5 +496,6 @@ func main() {
 		panic(err)
 	}
 	lines := strings.Split(string(data), "\n")
+	lines = append(lines, "")
 	ConstructGraph(lines)
 }
