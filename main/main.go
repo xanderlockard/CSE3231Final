@@ -10,38 +10,47 @@ import (
 	"strings"
 )
 
+// Node for Djikstras using an adjacency list
 type Node struct {
 	id        int
 	name      string
 	neighbors []Path
 }
 
+// Router struct for Bellman Ford, neighbors is a list of direct connections and pathindex is a list of
+// indexes of saved paths in the path list.
 type Router struct {
 	name      string
 	id        int
 	neighbors map[string]int
 	nexthop   map[int]int
+	pathindex []int
 }
 
+// Routing path represents an edge used in bellman ford algorith
 type RoutingPath struct {
 	routerA Router
 	routerB Router
 	cost    int
 }
 
+// Path represents an edge used in the Djikstra algorithm
 type Path struct {
 	node *Node
 	cost int
 }
 
+// Item is used in priority queue
 type Item struct {
 	value    Node
 	priority int
 	index    int
 }
 
+// PriorityQueue used for Djikstra's
 type PriorityQueue []*Item
 
+// Basic PQ Implementation
 func (pq PriorityQueue) Len() int            { return len(pq) }
 func (pq PriorityQueue) Less(i, j int) bool  { return pq[i].priority < pq[j].priority }
 func (pq PriorityQueue) Swap(i, j int)       { pq[i], pq[j] = pq[j], pq[i]; pq[i].index, pq[j].index = i, j }
@@ -60,11 +69,13 @@ func (pq *PriorityQueue) Update(item *Item, value Node, priority int) {
 	heap.Fix(pq, item.index)
 }
 
+// Result from Djikstra's algorithm struct
 type DjikstraResult struct {
 	costs []int
 	paths []int
 }
 
+// Find shortest paths across the graph and return the result
 func Dijkstra(source *Node, graph []*Node) DjikstraResult {
 	pq := make(PriorityQueue, 0)
 	costs := make([]int, len(graph))
@@ -97,6 +108,7 @@ func Dijkstra(source *Node, graph []*Node) DjikstraResult {
 	return DjikstraResult{costs: costs, paths: paths}
 }
 
+// Output used from Bellman Ford Algorithm
 type BellmanOutput struct {
 	nexthop              string
 	distancevectorstring string
@@ -104,6 +116,7 @@ type BellmanOutput struct {
 	destination          string
 }
 
+// Writes the current state of the Bellman Ford/DV Algorithm from source
 func WriteStateBellman(currentDistanceVector [][]int, source Router, timestep int, routerGraph []*Router) {
 	path := "topology_DV_" + source.name + ".txt"
 	var file *os.File
@@ -159,6 +172,7 @@ func WriteStateBellman(currentDistanceVector [][]int, source Router, timestep in
 	file.WriteString("\n")
 }
 
+// Gets the distance vector into string form to write
 func getDistanceVectorString(distancevector []int) string {
 	var res strings.Builder
 	for i := 0; i < len(distancevector); i++ {
@@ -175,22 +189,7 @@ func getDistanceVectorString(distancevector []int) string {
 	return res.String()
 }
 
-func getOtherDistanceVectorString(source Router, lengthofrouter int, routerGraph []*Router) string {
-	var res strings.Builder
-	for i := range lengthofrouter {
-		if i > 0 {
-			res.WriteString("   ")
-		}
-		val, ok := source.neighbors[routerGraph[i].name]
-		if !ok {
-			res.WriteString("N")
-		} else {
-			res.WriteString(strconv.Itoa(val))
-		}
-	}
-	return res.String()
-}
-
+// If there is not a link between the two routers use a blank distance vector string
 func getBlankDistanceVectorString(routerGraphLength int) string {
 	var res strings.Builder
 	for i := 0; i < routerGraphLength; i++ {
@@ -202,6 +201,7 @@ func getBlankDistanceVectorString(routerGraphLength int) string {
 	return res.String()
 }
 
+// Writes the state of the graph after running Djikstra algorithm
 func WriteStateDjikstra(graph []*Node, costs []int, paths []int, time int, source Node) {
 	path := "topology_SPF_" + source.name + ".txt"
 	var file *os.File
@@ -286,6 +286,7 @@ func InitializeRoutingTable(routingGraph []*Router) [][][]int {
 	return routingTable
 }
 
+// Need to copy values instead of just returning reference table as values will be modified in routing table
 func GetGlobalDistanceVector(routingTable [][][]int, timestep int) [][]int {
 	newDistanceVector := make([][]int, len(routingTable[timestep]))
 
@@ -334,12 +335,8 @@ func GetLocalDistanceVector(source Router, routingTable [][][]int, timestep int,
 // Write updated path at timestep i
 func updateDistanceVector(source Router, routingTable [][][]int, timestep, destinationID, newCost int) [][]int {
 	currentDistanceVector := routingTable[timestep]
-	currentCost := currentDistanceVector[source.id][destinationID]
-
-	if newCost < currentCost {
-		currentDistanceVector[source.id][destinationID] = newCost
-		source.nexthop[destinationID] = destinationID
-	}
+	currentDistanceVector[source.id][destinationID] = newCost
+	source.nexthop[destinationID] = destinationID
 
 	return currentDistanceVector
 }
@@ -349,7 +346,7 @@ func BellmanFord(source Router, routingTable [][][]int, timestep int, pathList [
 	// where u = startingedge
 	// where v = destinationedge
 	// See if distance from source to u + distance from u to v is less than distance of source to v
-	// If it is update routingtable[timestep][source][v] to be source to u + distrance from u to v
+	// If it is update routingtable[timestep + 2][source][v] to be source to u + distrance from u to v
 	// set next hop to v to be u
 	updateCount := 0
 	for _, path := range pathList {
@@ -369,6 +366,7 @@ func BellmanFord(source Router, routingTable [][][]int, timestep int, pathList [
 	}
 }
 
+// Using the input in lines construct the graph run simulation and Djikstra's algorithm
 func ConstructGraph(lines []string) int {
 	nodeMap := make(map[string]*Node)
 	routerMap := make(map[string]*Router)
@@ -432,15 +430,18 @@ func ConstructGraph(lines []string) int {
 			simulation := true
 			convergencecount := 0
 			for simulation {
+				// If converged 5 iterations in a row write the output and return 1
 				if convergencecount == 5 || currentTime >= 100 {
 					for i := range len(routerGraph) {
 						WriteStateBellman(GetLocalDistanceVector(*routerGraph[i], routingTable, currentTime-1, *&routerGraph), *routerGraph[i], currentTime-1, routerGraph)
 					}
 					return 1
 				}
+				// If simulated up to new input you can break
 				if currentTime == time {
 					break
 				}
+				// Write the states from last iteration of simulation before modifying new ones
 				for i := range len(routerGraph) {
 					WriteStateBellman(GetLocalDistanceVector(*routerGraph[i], routingTable, currentTime-1, *&routerGraph), *routerGraph[i], currentTime-1, routerGraph)
 				}
@@ -448,17 +449,21 @@ func ConstructGraph(lines []string) int {
 				updated := 0
 				var newRoutingTable [][][]int
 				var intcheck int
+				// Use offsetting because we are copying routing table over every 2 iterations and need to change when we do
+				// if we are adding new nodes
 				if even {
 					intcheck = 0
 				} else {
 					intcheck = 1
 				}
+				// Every other iteration copy over routingtable at last time to new time and new time + 1
 				if currentTime != 99 && currentTime%2 == intcheck {
 					routingTable[currentTime+1] = GetGlobalDistanceVector(routingTable, currentTime)
 					if currentTime < 97 {
 						routingTable[currentTime+2] = GetGlobalDistanceVector(routingTable, currentTime+1)
 					}
 				}
+				// Conduct Bellman Ford from all sources
 				for i := 0; i < len(routerGraph) && currentTime < 97; i++ {
 					convergence, newRoutingTable = BellmanFord(*routerGraph[i], routingTable, currentTime, pathList)
 
@@ -467,6 +472,7 @@ func ConstructGraph(lines []string) int {
 						updated += 1
 					}
 				}
+				// If it wasn't modified increment convergence
 				if updated == 0 {
 					convergencecount += 1
 				}
@@ -477,9 +483,10 @@ func ConstructGraph(lines []string) int {
 
 		nodeA, existsA := nodeMap[nodeAName]
 		routerA := routerMap[nodeAName]
+		// If node doesn't exist create necessary node
 		if !existsA {
 			nodeA = &Node{id: len(nodeMap), name: nodeAName}
-			routerA = &Router{id: len(nodeMap), name: nodeAName, neighbors: make(map[string]int), nexthop: make(map[int]int)}
+			routerA = &Router{id: len(nodeMap), name: nodeAName, neighbors: make(map[string]int), nexthop: make(map[int]int), pathindex: []int{}}
 			routerA.nexthop[routerA.id] = routerA.id
 			nodeMap[nodeAName] = nodeA
 			routerMap[nodeAName] = routerA
@@ -491,20 +498,62 @@ func ConstructGraph(lines []string) int {
 		routerB := routerMap[nodeBName]
 		if !existsB {
 			nodeB = &Node{id: len(nodeMap), name: nodeBName}
-			routerB = &Router{id: len(nodeMap), name: nodeBName, neighbors: make(map[string]int), nexthop: make(map[int]int)}
+			routerB = &Router{id: len(nodeMap), name: nodeBName, neighbors: make(map[string]int), nexthop: make(map[int]int), pathindex: []int{}}
 			routerB.nexthop[routerB.id] = routerB.id
 			nodeMap[nodeBName] = nodeB
 			routerMap[nodeBName] = routerB
 			graph = append(graph, nodeB)
 			routerGraph = append(routerGraph, routerB)
 		}
-
-		nodeA.neighbors = append(nodeA.neighbors, Path{node: nodeB, cost: cost})
-		nodeB.neighbors = append(nodeB.neighbors, Path{node: nodeA, cost: cost})
+		// Check if node already has a path
+		foundNodeA := false
+		for i := 0; i < len(nodeA.neighbors); i++ {
+			if nodeA.neighbors[i].node == nodeB {
+				nodeA.neighbors[i].cost = cost
+				foundNodeA = true
+				break
+			}
+		}
+		foundNodeB := false
+		for i := 0; i < len(nodeB.neighbors); i++ {
+			if nodeB.neighbors[i].node == nodeA {
+				nodeB.neighbors[i].cost = cost
+				foundNodeB = true
+				break
+			}
+		}
+		if !foundNodeA {
+			nodeA.neighbors = append(nodeA.neighbors, Path{node: nodeB, cost: cost})
+		}
+		if !foundNodeB {
+			nodeB.neighbors = append(nodeB.neighbors, Path{node: nodeA, cost: cost})
+		}
 		routerA.neighbors[routerB.name] = cost
 		routerB.neighbors[routerA.name] = cost
-		pathList = append(pathList, &RoutingPath{routerA: *routerA, routerB: *routerB, cost: cost})
-		pathList = append(pathList, &RoutingPath{routerA: *routerB, routerB: *routerA, cost: cost})
+		// Check if router already has path in edge list if so it will need to be updated
+		foundpathA := false
+		for pathindex := range routerA.pathindex {
+			if routerB.name == pathList[pathindex].routerB.name {
+				pathList[pathindex].cost = cost
+				foundpathA = true
+			}
+		}
+		foundpathB := false
+		for pathindex := range routerB.pathindex {
+			if routerA.name == pathList[pathindex].routerA.name {
+				pathList[pathindex].cost = cost
+				foundpathB = true
+			}
+		}
+		// If path doesn't exist make a new path
+		if !foundpathA {
+			pathList = append(pathList, &RoutingPath{routerA: *routerA, routerB: *routerB, cost: cost})
+			routerA.pathindex = append(routerA.pathindex, len(pathList)-1)
+		}
+		if !foundpathB {
+			pathList = append(pathList, &RoutingPath{routerA: *routerB, routerB: *routerA, cost: cost})
+			routerB.pathindex = append(routerB.pathindex, len(pathList)-1)
+		}
 	}
 	for i := 0; i < len(graph); i++ {
 		source := graph[i]
