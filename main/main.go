@@ -568,7 +568,7 @@ func ConstructGraph(lines []string) int {
 }
 
 func main() {
-	data, err := os.ReadFile("input.txt")
+	data, err := os.ReadFile(os.Args[1])
 	if err != nil {
 		panic(err)
 	}
