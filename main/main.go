@@ -167,7 +167,8 @@ func WriteStateBellman(currentDistanceVector [][]int, source Router, timestep in
 		return outputSlice[i].destination < outputSlice[j].destination
 	})
 	for i := 0; i < len(outputSlice); i++ {
-		file.WriteString(fmt.Sprintf("%d   %s   %s   %s   |   %s\n", timestep, outputSlice[i].destination, outputSlice[i].nexthop, outputSlice[i].cost, outputSlice[i].distancevectorstring))
+		// 		file.WriteString(fmt.Sprintf("%d | %-3s %-3d %-20s\n", time, nwc.node.name, nwc.cost, nwc.path))
+		file.WriteString(fmt.Sprintf("%d  %2s  %2s  %2s  | %2s\n", timestep, outputSlice[i].destination, outputSlice[i].nexthop, outputSlice[i].cost, outputSlice[i].distancevectorstring))
 	}
 	file.WriteString("\n")
 }
@@ -176,7 +177,9 @@ func WriteStateBellman(currentDistanceVector [][]int, source Router, timestep in
 func getDistanceVectorString(distancevector []int) string {
 	var res strings.Builder
 	for i := 0; i < len(distancevector); i++ {
-		if i > 0 {
+		if i > 0 && distancevector[i] >= 10 && distancevector[i] != int(^uint(0)>>1) {
+			res.WriteString("  ")
+		} else if i > 0 {
 			res.WriteString("   ")
 		}
 		cost := distancevector[i]
@@ -251,7 +254,7 @@ func WriteStateDjikstra(graph []*Node, costs []int, paths []int, time int, sourc
 	})
 
 	for _, nwc := range nodesWithCost {
-		file.WriteString(fmt.Sprintf("%d | %-3s %-3d %-20s\n", time, nwc.node.name, nwc.cost, nwc.path))
+		file.WriteString(fmt.Sprintf("%d |  %2s  %2d  %-20s\n", time, nwc.node.name, nwc.cost, nwc.path))
 	}
 
 	file.WriteString("\n")
