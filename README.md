@@ -4,4 +4,5 @@
 > Go (can be installed at https://go.dev/dl/)
 
 ## To run use
-> go run main
+> cd main
+> go run .

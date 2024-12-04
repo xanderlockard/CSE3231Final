@@ -351,7 +351,7 @@ func BellmanFord(source Router, routingTable [][][]int, timestep int, pathList [
 	// See if distance from source to u + distance from u to v is less than distance of source to v
 	// If it is update routingtable[timestep][source][v] to be source to u + distrance from u to v
 	// set next hop to v to be u
-	converged := true
+	updateCount := 0
 	for _, path := range pathList {
 		u := path.routerA
 		v := path.routerB
@@ -359,13 +359,17 @@ func BellmanFord(source Router, routingTable [][][]int, timestep int, pathList [
 		if tempdistance > 0 && tempdistance < routingTable[timestep][source.id][v.id] {
 			routingTable[timestep+2][source.id][v.id] = tempdistance
 			source.nexthop[v.id] = u.id
-			converged = false
+			updateCount += 1
 		}
 	}
-	return converged, routingTable
+	if updateCount > 0 {
+		return false, routingTable
+	} else {
+		return true, routingTable
+	}
 }
 
-func ConstructGraph(lines []string) ([]*Node, map[string]*Node) {
+func ConstructGraph(lines []string) int {
 	nodeMap := make(map[string]*Node)
 	routerMap := make(map[string]*Router)
 	edgePattern := regexp.MustCompile(`(\d+):([A-Za-z]),([A-Za-z]),(\d+)`)
@@ -375,6 +379,7 @@ func ConstructGraph(lines []string) ([]*Node, map[string]*Node) {
 	pathList := []*RoutingPath{}
 	currentRouteIndex := 0
 	var routingTable [][][]int
+	even := true
 
 	for i, line := range lines {
 		if line == "" {
@@ -391,7 +396,7 @@ func ConstructGraph(lines []string) ([]*Node, map[string]*Node) {
 
 		// If the time is updated run simulation up to that point
 		// OR if all lines have been read run simulation
-		if time != currentTime || i == len(lines)-1 {
+		if time != currentTime || i == len(lines)-2 {
 			// Write truth table at time
 			for i := 0; i < len(graph); i++ {
 				source := graph[i]
@@ -407,32 +412,48 @@ func ConstructGraph(lines []string) ([]*Node, map[string]*Node) {
 					WriteStateBellman(GetLocalDistanceVector(*routerGraph[i], routingTable, currentTime-1, *&routerGraph), *routerGraph[i], currentTime-1, routerGraph)
 				}
 			}
-			// newPath := false
 			// before adding new paths copy over previous pathse
 			if currentRouteIndex < len(pathList) {
 				routingTable[currentTime] = GetGlobalDistanceVector(routingTable, currentTime-1)
 				routingTable[currentTime+1] = GetGlobalDistanceVector(routingTable, currentTime)
-				// newPath = true
 			}
 			for i := currentRouteIndex; i < len(pathList); i++ {
 				// Add all the paths to the routing table
 				path := pathList[i]
 				updateDistanceVector(path.routerA, routingTable, currentTime+1, path.routerB.id, path.cost)
+				if (currentTime+1)%2 == 1 {
+					even = false
+				} else {
+					even = true
+				}
 			}
 			currentTime += 1
 			currentRouteIndex = len(pathList)
 			simulation := true
 			convergencecount := 0
 			for simulation {
-				if convergencecount == 5 || currentTime >= 100 || currentTime == time {
+				if convergencecount == 5 || currentTime >= 100 {
+					for i := range len(routerGraph) {
+						WriteStateBellman(GetLocalDistanceVector(*routerGraph[i], routingTable, currentTime-1, *&routerGraph), *routerGraph[i], currentTime-1, routerGraph)
+					}
+					return 1
+				}
+				if currentTime == time {
 					break
 				}
 				for i := range len(routerGraph) {
 					WriteStateBellman(GetLocalDistanceVector(*routerGraph[i], routingTable, currentTime-1, *&routerGraph), *routerGraph[i], currentTime-1, routerGraph)
 				}
 				var convergence bool
+				updated := 0
 				var newRoutingTable [][][]int
-				if currentTime != 99 && currentTime%2 == 0 {
+				var intcheck int
+				if even {
+					intcheck = 0
+				} else {
+					intcheck = 1
+				}
+				if currentTime != 99 && currentTime%2 == intcheck {
 					routingTable[currentTime+1] = GetGlobalDistanceVector(routingTable, currentTime)
 					if currentTime < 97 {
 						routingTable[currentTime+2] = GetGlobalDistanceVector(routingTable, currentTime+1)
@@ -440,10 +461,14 @@ func ConstructGraph(lines []string) ([]*Node, map[string]*Node) {
 				}
 				for i := 0; i < len(routerGraph) && currentTime < 97; i++ {
 					convergence, newRoutingTable = BellmanFord(*routerGraph[i], routingTable, currentTime, pathList)
-					if convergence {
-						convergencecount += 1
-					}
+
 					routingTable = newRoutingTable
+					if !convergence {
+						updated += 1
+					}
+				}
+				if updated == 0 {
+					convergencecount += 1
 				}
 				currentTime += 1
 			}
@@ -487,7 +512,7 @@ func ConstructGraph(lines []string) ([]*Node, map[string]*Node) {
 		WriteStateDjikstra(graph, results.costs, results.paths, currentTime, *source)
 	}
 
-	return graph, nodeMap
+	return -1
 }
 
 func main() {
