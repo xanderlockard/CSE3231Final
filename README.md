@@ -3,6 +3,8 @@
 ## Dependencies:
 > Go (can be installed at https://go.dev/dl/)
 
-## To run use
+## To run first
 > cd main
+
+## Then use
 > go run .
