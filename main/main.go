@@ -167,7 +167,6 @@ func WriteStateBellman(currentDistanceVector [][]int, source Router, timestep in
 		return outputSlice[i].destination < outputSlice[j].destination
 	})
 	for i := 0; i < len(outputSlice); i++ {
-		// 		file.WriteString(fmt.Sprintf("%d | %-3s %-3d %-20s\n", time, nwc.node.name, nwc.cost, nwc.path))
 		file.WriteString(fmt.Sprintf("%d  %2s  %2s  %2s  | %2s\n", timestep, outputSlice[i].destination, outputSlice[i].nexthop, outputSlice[i].cost, outputSlice[i].distancevectorstring))
 	}
 	file.WriteString("\n")
@@ -289,7 +288,6 @@ func InitializeRoutingTable(routingGraph []*Router) [][][]int {
 	return routingTable
 }
 
-// Need to copy values instead of just returning reference table as values will be modified in routing table
 func GetGlobalDistanceVector(routingTable [][][]int, timestep int) [][]int {
 	newDistanceVector := make([][]int, len(routingTable[timestep]))
 
@@ -331,11 +329,7 @@ func GetLocalDistanceVector(source Router, routingTable [][][]int, timestep int,
 	return result
 }
 
-// To add new Paths at timestep i
-// If routingtable[i - 1][source][destination] > newpath(source, desination, cost)
-// Add path to timestep i
-// Else stay with old path
-// Write updated path at timestep i
+// Add new paths to the routingTable
 func updateDistanceVector(source Router, routingTable [][][]int, timestep, destinationID, newCost int) [][]int {
 	currentDistanceVector := routingTable[timestep]
 	currentDistanceVector[source.id][destinationID] = newCost
