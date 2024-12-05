@@ -536,14 +536,14 @@ func ConstructGraph(lines []string) int {
 		// Check if router already has path in edge list if so it will need to be updated
 		foundpathA := false
 		for pathindex := range routerA.pathindex {
-			if routerB.name == pathList[pathindex].routerB.name {
+			if routerB.name == pathList[pathindex].routerB.name && routerA.name == pathList[pathindex].routerA.name {
 				pathList[pathindex].cost = cost
 				foundpathA = true
 			}
 		}
 		foundpathB := false
 		for pathindex := range routerB.pathindex {
-			if routerA.name == pathList[pathindex].routerA.name {
+			if routerA.name == pathList[pathindex].routerA.name && routerB.name == pathList[pathindex].routerB.name {
 				pathList[pathindex].cost = cost
 				foundpathB = true
 			}
