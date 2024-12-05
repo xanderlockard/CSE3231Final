@@ -7,4 +7,4 @@
 > cd main
 
 ## Then use
-> go run .
+> go run . <relative-path-to-input-file>
